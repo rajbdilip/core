@@ -87,11 +87,12 @@ class Test_Trashbin extends \Test\TestCase {
 	}
 
 
-
 	public static function tearDownAfterClass() {
 		// cleanup test user
 		$user = \OC::$server->getUserManager()->get(self::TEST_TRASHBIN_USER1);
-		if ($user !== null) { $user->delete(); }
+		if ($user !== null) {
+			$user->delete();
+		}
 
 		\OC::$server->getConfig()->setSystemValue('trashbin_retention_obligation', self::$rememberRetentionObligation);
 
@@ -110,6 +111,18 @@ class Test_Trashbin extends \Test\TestCase {
 		parent::setUp();
 
 		\OC::$server->getAppManager()->enableApp('files_trashbin');
+		$config = \OC::$server->getConfig();
+		$mockConfig = $this->getMock('\OCP\IConfig');
+		$mockConfig->expects($this->any())
+			->method('getSystemValue')
+			->will($this->returnCallback(function ($key, $default) use ($config) {
+				if ($key === 'filesystem_check_changes') {
+					return \OC\Files\Cache\Watcher::CHECK_ONCE;
+				} else {
+					return $config->getSystemValue($key, $default);
+				}
+			}));
+		$this->overwriteService('AllConfig', $mockConfig);
 
 		$this->trashRoot1 = '/' . self::TEST_TRASHBIN_USER1 . '/files_trashbin';
 		$this->trashRoot2 = '/' . self::TEST_TRASHBIN_USER2 . '/files_trashbin';
@@ -118,6 +131,7 @@ class Test_Trashbin extends \Test\TestCase {
 	}
 
 	protected function tearDown() {
+		$this->restoreService('AllConfig');
 		// disable trashbin to be able to properly clean up
 		\OC::$server->getAppManager()->disableApp('files_trashbin');
 
@@ -139,8 +153,8 @@ class Test_Trashbin extends \Test\TestCase {
 	public function testExpireOldFiles() {
 
 		$currentTime = time();
-		$expireAt = $currentTime - 2*24*60*60;
-		$expiredDate = $currentTime - 3*24*60*60;
+		$expireAt = $currentTime - 2 * 24 * 60 * 60;
+		$expiredDate = $currentTime - 3 * 24 * 60 * 60;
 
 		// create some files
 		\OC\Files\Filesystem::file_put_contents('file1.txt', 'file1');
@@ -188,7 +202,7 @@ class Test_Trashbin extends \Test\TestCase {
 
 		$currentTime = time();
 		$folder = "trashTest-" . $currentTime . '/';
-		$expiredDate = $currentTime - 3*24*60*60;
+		$expiredDate = $currentTime - 3 * 24 * 60 * 60;
 
 		// create some files
 		\OC\Files\Filesystem::mkdir($folder);
@@ -251,6 +265,7 @@ class Test_Trashbin extends \Test\TestCase {
 
 	/**
 	 * verify that the array contains the expected results
+	 *
 	 * @param OCP\Files\FileInfo[] $result
 	 * @param string[] $expected
 	 */
@@ -266,7 +281,7 @@ class Test_Trashbin extends \Test\TestCase {
 			}
 			if (!$found) {
 				// if we didn't found the expected file, something went wrong
-				$this->assertTrue(false, "can't find expected file '" . $expectedFile .  "' in trash bin");
+				$this->assertTrue(false, "can't find expected file '" . $expectedFile . "' in trash bin");
 			}
 		}
 	}
@@ -282,7 +297,7 @@ class Test_Trashbin extends \Test\TestCase {
 			// modify every second file
 			$counter = ($counter + 1) % 2;
 			if ($counter === 1) {
-				$source = $trashRoot . '/files/' . $file['name'].'.d'.$file['mtime'];
+				$source = $trashRoot . '/files/' . $file['name'] . '.d' . $file['mtime'];
 				$target = \OC\Files\Filesystem::normalizePath($trashRoot . '/files/' . $file['name'] . '.d' . $expireDate);
 				$this->rootView->rename($source, $target);
 				$file['mtime'] = $expireDate;
@@ -446,7 +461,7 @@ class Test_Trashbin extends \Test\TestCase {
 		$trashedFile = $filesInTrash[0];
 
 		$this->assertTrue(
-				OCA\Files_Trashbin\Trashbin::restore(
+			OCA\Files_Trashbin\Trashbin::restore(
 				'folder.d' . $trashedFile->getMtime() . '/file1.txt',
 				'file1.txt',
 				$trashedFile->getMtime()
@@ -640,7 +655,7 @@ class Test_Trashbin extends \Test\TestCase {
 		if ($create) {
 			try {
 				\OC::$server->getUserManager()->createUser($user, $user);
-			} catch(\Exception $e) { // catch username is already being used from previous aborted runs
+			} catch (\Exception $e) { // catch username is already being used from previous aborted runs
 
 			}
 		}
