@@ -27,6 +27,7 @@ namespace OCA\Files_Sharing\External;
 
 use OC\Files\Storage\DAV;
 use OC\ForbiddenException;
+use OCA\FederatedFileSharing\DiscoveryManager;
 use OCA\Files_Sharing\ISharedStorage;
 use OCP\Files\NotFoundException;
 use OCP\Files\StorageInvalidException;
@@ -66,6 +67,11 @@ class Storage extends DAV implements ISharedStorage {
 	private $manager;
 
 	public function __construct($options) {
+		$discoveryManager = new DiscoveryManager(
+			\OC::$server->getMemCacheFactory(),
+			\OC::$server->getHTTPClientService()
+		);
+
 		$this->manager = $options['manager'];
 		$this->certificateManager = $options['certificateManager'];
 		$this->remote = $options['remote'];
@@ -78,7 +84,7 @@ class Storage extends DAV implements ISharedStorage {
 			$root = '';
 		}
 		$secure = $protocol === 'https';
-		$root = rtrim($root, '/') . '/public.php/webdav';
+		$root = rtrim($root, '/') . $discoveryManager->getWebDavEndpoint($this->remote);
 		$this->mountPoint = $options['mountpoint'];
 		$this->token = $options['token'];
 		parent::__construct(array(
@@ -135,6 +141,9 @@ class Storage extends DAV implements ISharedStorage {
 	public function getScanner($path = '', $storage = null) {
 		if (!$storage) {
 			$storage = $this;
+		}
+		if(!$this->remoteIsOwnCloud()) {
+			return parent::getScanner($path, $storage);
 		}
 		if (!isset($this->scanner)) {
 			$this->scanner = new Scanner($storage);
@@ -218,18 +227,37 @@ class Storage extends DAV implements ISharedStorage {
 	}
 
 	/**
-	 * check if the configured remote is a valid ownCloud instance
+	 * check if the configured remote is a valid federated share provider
 	 *
 	 * @return bool
 	 */
 	protected function testRemote() {
 		try {
-			$result = file_get_contents($this->remote . '/status.php');
-			$data = json_decode($result);
-			return is_object($data) and !empty($data->version);
+			return $this->testRemoteUrl($this->remote . '/ocs-provider/index.php')
+				|| $this->testRemoteUrl($this->remote . '/ocs-provider/')
+				|| $this->testRemoteUrl($this->remote . '/status.php');
 		} catch (\Exception $e) {
 			return false;
 		}
+	}
+
+	private function testRemoteUrl($url) {
+		$result = file_get_contents($url);
+		$data = json_decode($result);
+		return (is_object($data) and !empty($data->version));
+	}
+
+	/**
+	 * Whether the remote is an ownCloud, used since some sharing features are not
+	 * standardized. Let's use this to detect whether to use it.
+	 *
+	 * @return bool
+	 */
+	private function remoteIsOwnCloud() {
+		if(defined('PHPUNIT_RUN') || !$this->testRemoteUrl($this->getRemote() . '/status.php')) {
+			return false;
+		}
+		return true;
 	}
 
 	/**
@@ -242,6 +270,12 @@ class Storage extends DAV implements ISharedStorage {
 		$remote = $this->getRemote();
 		$token = $this->getToken();
 		$password = $this->getPassword();
+
+		// If remote is not an ownCloud do not try to get any share info
+		if(!$this->remoteIsOwnCloud()) {
+			return ['status' => 'unsupported'];
+		}
+
 		$url = rtrim($remote, '/') . '/index.php/apps/files_sharing/shareinfo?t=' . $token;
 
 		// TODO: DI
